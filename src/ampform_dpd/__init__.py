@@ -5,11 +5,13 @@ from __future__ import annotations
 import functools
 import operator
 from collections import abc
-from functools import cache
+from collections.abc import Callable
+from functools import cache, wraps
 from itertools import product
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 from warnings import warn
 
+import attrs
 import sympy as sp
 from ampform.kinematics.phasespace import compute_third_mandelstam
 from ampform.sympy import PoolSum
@@ -35,7 +37,7 @@ from ampform_dpd.decay import (
 from ampform_dpd.spin import create_spin_range
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
     from typing import Any, Literal
 
 
@@ -181,12 +183,10 @@ class DalitzPlotDecompositionBuilder:
             self.decay.final_state[3].spin,
         )
         λR = sp.Symbol(R"\lambda_R", rational=True)
-        terms = []
-        parameter_defaults: dict[sp.Basic, complex] = {}
+        amplitude_sum = DefinedExpression(0)
         for chain in self.decay.get_subsystem(subsystem_id).chains:
             formulate_dynamics = self.dynamics_choices.get_builder(chain.resonance.name)
-            dynamics = formulate_dynamics(chain)
-            parameter_defaults.update(dynamics.parameters)
+            amplitude = formulate_dynamics(chain)
             resonance_spin = sp.Rational(chain.resonance.spin)
             resonance_helicities = create_spin_range(resonance_spin)
             for λR_val in resonance_helicities:
@@ -200,26 +200,25 @@ class DalitzPlotDecompositionBuilder:
                 )
                 if isinstance(scaling_factors, tuple):
                     h_prod, h_dec = scaling_factors
-                    parameter_defaults[h_prod] = 1 + 0j
-                    parameter_defaults[h_dec] = 1
+                    amplitude.parameters[h_prod] = 1 + 0j
+                    amplitude.parameters[h_dec] = 1
                 else:
-                    parameter_defaults[scaling_factors] = 1 + 0j
+                    amplitude.parameters[scaling_factors] = 1 + 0j
             scaling_factors = _create_scaling_factors(
                 chain,
                 (self.use_production_helicity_couplings, λR, λ[k]),
                 (self.use_decay_helicity_couplings, λ[i], λ[j]),
                 one_scalar_per_chain=use_coefficients,
             )
-            sub_amp_expr = (
+            amplitude *= (
                 sp.KroneckerDelta(λ[0], λR - λ[k])
                 * (-1) ** (spin[k] - λ[k])
-                * dynamics.expression
                 * Wigner.d(resonance_spin, λR, λ[i] - λ[j], θij)
                 * _product(scaling_factors)
                 * (-1) ** (spin[j] - λ[j])
             )
             if not self.use_decay_helicity_couplings:
-                sub_amp_expr *= _formulate_clebsch_gordan_factors(
+                amplitude *= _formulate_clebsch_gordan_factors(
                     chain.decay_node,
                     helicities={
                         self.decay.final_state[i]: λ[i],
@@ -228,27 +227,25 @@ class DalitzPlotDecompositionBuilder:
                 )
             if not self.use_production_helicity_couplings:
                 production_isobar = chain.decay
-                sub_amp_expr *= _formulate_clebsch_gordan_factors(
+                amplitude *= _formulate_clebsch_gordan_factors(
                     production_isobar,
                     helicities={
                         chain.resonance: λR,
                         self.decay.final_state[k]: λ[k],
                     },
                 )
-            sub_amp = PoolSum(
-                sub_amp_expr,
-                (λR, resonance_helicities),
+            amplitude_sum += attrs.evolve(
+                amplitude,
+                expression=PoolSum(amplitude.expression, (λR, resonance_helicities)),
             )
-            terms.append(sub_amp)
         A = _generate_amplitude_index_bases()
         amp_symbol = A[subsystem_id][λ0, λ1, λ2, λ3]
-        amp_expr = sp.Add(*terms)
         return AmplitudeModel(
             decay=self.decay,
             intensity=sp.Abs(amp_symbol) ** 2,
-            amplitudes={amp_symbol: amp_expr},
-            variables={θij: θij_expr},
-            parameter_defaults=parameter_defaults,
+            amplitudes={amp_symbol: amplitude_sum.expression},
+            variables=amplitude_sum.subexpressions | {θij: θij_expr},
+            parameter_defaults=amplitude_sum.parameters,
         )
 
     def formulate_aligned_amplitude(
@@ -480,27 +477,43 @@ class DynamicsBuilder(Protocol):
     def __call__(self, decay_chain: ThreeBodyDecayChain) -> DefinedExpression: ...
 
 
+def _binary_operation(op: Callable[[Any, Any], Any]):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self: DefinedExpression, other):
+            if isinstance(other, DefinedExpression):
+                return DefinedExpression(
+                    expression=op(self.expression, other.expression),
+                    parameters=self.parameters | other.parameters,
+                    subexpressions=self.subexpressions | other.subexpressions,
+                )
+            return DefinedExpression(
+                expression=op(self.expression, other),
+                parameters=self.parameters,
+                subexpressions=self.subexpressions,
+            )
+
+        return wrapper
+
+    return decorator
+
+
 @define
 class DefinedExpression:
-    expression: sp.Expr = sp.S.One
+    expression: sp.Expr = field(converter=sp.sympify, default=sp.S.One)  # type:ignore[misc]
     parameters: dict[sp.Symbol, complex | float] = field(factory=dict)
+    subexpressions: dict[sp.Symbol, sp.Expr] = field(factory=dict)
 
-    def __mul__(self, other: Any) -> DefinedExpression:
-        if isinstance(other, DefinedExpression):
-            return DefinedExpression(
-                expression=self.expression * other.expression,
-                parameters={**self.parameters, **other.parameters},
-            )
-        if isinstance(other, abc.Sequence) and len(other) == 2:  # noqa: PLR2004
-            expression, definitions = other
-            return DefinedExpression(
-                expression=self.expression * expression,
-                parameters={**self.parameters, **definitions},
-            )
-        return DefinedExpression(
-            expression=self.expression * other,
-            parameters=self.parameters,
-        )
+    @_binary_operation(operator.mul)
+    def __mul__(self, other) -> DefinedExpression: ...  # type:ignore[empty-body]
+    @_binary_operation(operator.add)
+    def __add__(self, other) -> DefinedExpression: ...  # type:ignore[empty-body]
+    @_binary_operation(operator.sub)
+    def __sub__(self, other) -> DefinedExpression: ...  # type:ignore[empty-body]
+    @_binary_operation(operator.truediv)
+    def __truediv__(self, other) -> DefinedExpression: ...  # type:ignore[empty-body]
+    @_binary_operation(operator.pow)
+    def __pow__(self, other) -> DefinedExpression: ...  # type:ignore[empty-body]
 
 
 def create_mass_symbol_mapping(decay: ThreeBodyDecay) -> dict[sp.Symbol, float]:
