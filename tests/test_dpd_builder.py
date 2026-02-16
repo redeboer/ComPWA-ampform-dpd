@@ -24,7 +24,7 @@ class TestDalitzPlotDecompositionBuilder:
         if jpsi2pksigma_reaction.formalism == "helicity" and not min_ls:
             pytest.skip("Helicity formalism with all LS not supported")
         transitions = normalize_state_ids(jpsi2pksigma_reaction.transitions)
-        decay = to_three_body_decay(transitions, min_ls=min_ls)
+        decay = to_three_body_decay(transitions, min_ls=min_ls)  # ty:ignore[invalid-argument-type]
         builder = DalitzPlotDecompositionBuilder(
             decay, min_ls=min_ls, all_subsystems=all_subsystems
         )
@@ -54,7 +54,7 @@ class TestDalitzPlotDecompositionBuilder:
         }
         if not all_subsystems:
             expected_variables.remove("theta_23")
-        assert {s.name for s in model.variables} == expected_variables
+        assert {str(s) for s in model.variables} == expected_variables
 
     @pytest.mark.parametrize("min_ls", [False, True])
     @pytest.mark.parametrize("use_coefficients", [False, True])
@@ -64,7 +64,7 @@ class TestDalitzPlotDecompositionBuilder:
         if jpsi2pksigma_reaction.formalism == "helicity" and not min_ls:
             pytest.skip("Helicity formalism with all LS not supported")
         transitions = normalize_state_ids(jpsi2pksigma_reaction.transitions)
-        decay = to_three_body_decay(transitions, min_ls=min_ls)
+        decay = to_three_body_decay(transitions, min_ls=min_ls)  # ty:ignore[invalid-argument-type]
         builder = DalitzPlotDecompositionBuilder(decay, min_ls=min_ls)
         model = builder.formulate(
             reference_subsystem=2,
@@ -155,12 +155,12 @@ class TestDalitzPlotDecompositionBuilder:
         )
         transitions = normalize_state_ids(reaction.transitions)
         min_ls = basis == "helicity"
-        decay = to_three_body_decay(transitions, min_ls)
+        decay = to_three_body_decay(transitions, min_ls)  # ty:ignore[invalid-argument-type]
         builder = DalitzPlotDecompositionBuilder(decay, min_ls)
         # cspell:ignore coeff
         reference_subsystem = 1 if resonance.startswith("Sigma") else 3
-        coupling_model = builder.formulate(reference_subsystem)  # type:ignore[arg-type]
-        coeff_model = builder.formulate(reference_subsystem, use_coefficients=True)  # type:ignore[arg-type]
+        coupling_model = builder.formulate(reference_subsystem)
+        coeff_model = builder.formulate(reference_subsystem, use_coefficients=True)
         coupling_amplitudes = _get_physical_amplitudes(coupling_model)
         coeff_amplitudes = _get_physical_amplitudes(coeff_model)
 
@@ -180,7 +180,7 @@ class TestDalitzPlotDecompositionBuilder:
 
 
 def _collect_indexed_symbols(amplitudes: list[sp.Expr]) -> set[sp.Indexed]:
-    coupling_symbols: set[str] = set()
+    coupling_symbols: set[sp.Indexed] = set()
     for expr in amplitudes:
         symbols = {s for s in expr.free_symbols if isinstance(s, sp.Indexed)}
         coupling_symbols.update(symbols)
@@ -194,7 +194,7 @@ def _collect_products(amplitudes: list[sp.Expr]) -> list[tuple[sp.Indexed, sp.In
             couplings = {s for s in node.free_symbols if isinstance(s, sp.Indexed)}
             if len(couplings) == 2:
                 products.add(tuple(sorted(couplings, key=str)))
-    return sorted(products, key=str)
+    return sorted(products, key=str)  # ty:ignore[invalid-return-type]
 
 
 def _get_physical_amplitudes(model: AmplitudeModel) -> list[sp.Expr]:

@@ -1,3 +1,6 @@
+import warnings
+
+from sphinx.deprecation import RemovedInSphinx10Warning
 from sphinx_api_relink.helpers import (
     get_branch_name,
     get_execution_mode,
@@ -18,10 +21,12 @@ set_intersphinx_version_remapping({
         "8.0.6": "8.0.5",
         "8.1.1": "8.1.2",
         "8.1.7": "8.1.5",
+        "8.1.8": "8.1.5",
     },
     "matplotlib": {"3.9.1.post1": "3.9.1"},
     "mpl-interactions": {"0.24.1": "0.24.0"},
 })
+warnings.filterwarnings("ignore", category=RemovedInSphinx10Warning)
 
 BRANCH = get_branch_name()
 ORGANIZATION = "ComPWA"
@@ -53,6 +58,7 @@ api_target_substitutions: dict[str, str | tuple[str, str]] = {
     "NodeType": "typing.TypeVar",
     "ParameterValue": ("obj", "tensorwaves.interface.ParameterValue"),
     "ParametrizedBackendFunction": "tensorwaves.function.ParametrizedBackendFunction",
+    "PhaseSpaceFactorProtocol": "ampform.dynamics.phasespace.PhaseSpaceFactorProtocol",
     "PoolSum": "ampform.sympy.PoolSum",
     "PositionalArgumentFunction": "tensorwaves.function.PositionalArgumentFunction",
     "qrules.topology.EdgeType": "typing.TypeVar",
@@ -61,7 +67,6 @@ api_target_substitutions: dict[str, str | tuple[str, str]] = {
     "sp.Basic": "sympy.core.basic.Basic",
     "sp.Expr": "sympy.core.expr.Expr",
     "sp.Indexed": "sympy.tensor.indexed.Indexed",
-    "PhaseSpaceFactorProtocol": "ampform.dynamics.phasespace.PhaseSpaceFactorProtocol",
     "sp.Rational": "sympy.core.numbers.Rational",
     "sp.Symbol": "sympy.core.symbol.Symbol",
     "StateID": ("obj", "ampform_dpd.decay.StateID"),
@@ -89,6 +94,7 @@ autosectionlabel_prefix_document = True
 autosectionlabel_maxdepth = 2
 bibtex_bibfiles = ["references.bib"]
 bibtex_default_style = "unsrt_et_al"
+bibtex_use_mathjax = True
 codeautolink_concat_default = True
 copybutton_prompt_is_regexp = True
 copybutton_prompt_text = r">>> |\.\.\. "  # doctest
@@ -222,4 +228,5 @@ primary_domain = "py"
 project = REPO_TITLE
 pygments_style = "sphinx"
 release = get_package_version(PACKAGE)
+suppress_warnings = ["myst.directive_unknown"]
 version = get_package_version(PACKAGE)

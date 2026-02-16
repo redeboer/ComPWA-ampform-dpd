@@ -53,15 +53,12 @@ file = "README.md"
 [project.urls]
 Changelog = "https://github.com/ComPWA/ampform-dpd/releases"
 Documentation = "https://compwa.github.io/ampform-dpd"
+Issues = "https://github.com/ComPWA/ampform-dpd/issues"
 Source = "https://github.com/ComPWA/ampform-dpd"
-Tracker = "https://github.com/ComPWA/ampform-dpd/issues"
 
 [dependency-groups]
 dev = [
-    "nbmake",
-    "poethepoet",
     "ruff",
-    "sphinx-autobuild",
     {include-group = "doc"},
     {include-group = "jupyter"},
     {include-group = "style"},
@@ -80,27 +77,28 @@ doc = [
     {include-group = "notebooks"},
 ]
 jupyter = [
+    "jupyter-ruff",
     "jupyterlab",
-    "jupyterlab-code-formatter",
     "jupyterlab-git",
     "jupyterlab-lsp",
     "jupyterlab-myst",
     "jupyterlab-quickopen",
     "python-lsp-ruff",
-    "python-lsp-server[rope]",
+    "python-lsp-server",
     {include-group = "notebooks"},
 ]
 notebooks = [
-    "graphviz",
     "ipympl",
     "ipywidgets",
     "matplotlib",
     "pandas",
+    "qrules[viz]",
     "tensorwaves[phsp]",
     "tqdm",
 ]
 style = [
-    "mypy",
+    "ty",
+    {include-group = "notebooks"},
     {include-group = "types"},
 ]
 test = [
@@ -143,27 +141,10 @@ omit = [
 ]
 source = ["src"]
 
-[tool.mypy]
-exclude = "_build"
-show_error_codes = true
-warn_unused_configs = true
-
-[[tool.mypy.overrides]]
-ignore_missing_imports = true
-module = ["cloudpickle.*"]
-
-[[tool.mypy.overrides]]
-ignore_missing_imports = true
-module = ["sympy.*"]
-
-[[tool.mypy.overrides]]
-check_untyped_defs = true
-disallow_incomplete_defs = false
-disallow_untyped_defs = false
-module = ["tests.*"]
-
-[tool.poe]
-executor.type = "uv"
+[tool.poe.executor]
+isolated = true
+no-group = "dev"
+type = "uv"
 
 [tool.poe.tasks.all]
 help = "Run all continuous integration (CI) tasks locally"
@@ -186,6 +167,7 @@ pytest \
     --numprocesses=auto \
     ${paths}
 """
+executor = {group = "test"}
 help = "Compute how much of the source code is covered by tests"
 
 [[tool.poe.tasks.cov.args]]
@@ -205,6 +187,7 @@ sphinx-build \
     docs/_build/html/
 """
 env = {PYTHONWARNINGS = ""}
+executor = {group = "doc"}
 help = "Build documentation and API"
 
 [tool.poe.tasks.doclive]
@@ -231,6 +214,7 @@ sphinx-autobuild \
     docs/ \
     docs/_build/html/
 """
+executor = {group = "doc", with = "sphinx-autobuild"}
 help = "Set up a server to directly preview changes to the HTML pages"
 
 [tool.poe.tasks.docnb]
@@ -251,7 +235,8 @@ sequence = ["doclive"]
 [tool.poe.tasks.lab]
 args = [{name = "paths", default = "", positional = true}]
 cmd = "jupyter lab ${paths}"
-help = "Run Jupyter Lab"
+executor = {group = "jupyter"}
+help = "Launch Jupyter Lab"
 
 [tool.poe.tasks.linkcheck]
 cmd = """
@@ -262,18 +247,23 @@ sphinx-build \
     docs/_build/linkcheck/
 """
 env = {PYTHONWARNINGS = ""}
+executor = {group = "doc"}
 help = "Check external links in the documentation (requires internet connection)"
 
 [tool.poe.tasks.nb]
-cmd = "pytest --nbmake --nbmake-timeout=0 docs"
+args = [{name = "paths", default = "docs", multiple = true, positional = true}]
+cmd = "pytest --nbmake --nbmake-timeout=0 ${paths}"
+executor = {group = "notebooks", with = "nbmake"}
 help = "Run all notebooks"
 
 [tool.poe.tasks.style]
-cmd = "uv run --group style --isolated --no-dev pre-commit run --all-files"
+cmd = "pre-commit run --all-files"
+executor = {group = "style"}
 help = "Perform all linting, formatting, and spelling checks"
 
 [tool.poe.tasks.test]
-cmd = "pytest --numprocesses=auto ${paths}"
+cmd = "pytest -m 'slow or not slow' --numprocesses=auto ${paths}"
+executor = {group = "test"}
 help = "Run all unit tests"
 
 [[tool.poe.tasks.test.args]]
@@ -285,62 +275,40 @@ positional = true
 [tool.poe.tasks.test-all]
 help = "Run all tests on each supported Python version"
 sequence = [
-    {ref = "test-py 3.10"},
-    {ref = "test-py 3.11"},
-    {ref = "test-py 3.12"},
-    {ref = "test-py 3.13"},
-    {ref = "test-py 3.14"},
+    {ref = "test-py310 ${paths}"},
+    {ref = "test-py311 ${paths}"},
+    {ref = "test-py312 ${paths}"},
+    {ref = "test-py313 ${paths}"},
+    {ref = "test-py314 ${paths}"},
 ]
 
-[tool.poe.tasks.test-py]
-cmd = """
-uv run \
-    --group=test \
-    --isolated \
-    --no-dev \
-    --python=${version} \
-    pytest \
-        -m 'slow or not slow' \
-        --numprocesses=auto
-"""
-help = "Run all tests on a specific Python version"
-
-[[tool.poe.tasks.test-py.args]]
-default = "3.13"
-help = "Selected Python version"
-name = "version"
+[[tool.poe.tasks.test-all.args]]
+default = ""
+multiple = true
+name = "paths"
 positional = true
 
-[tool.pyright]
-reportArgumentType = false
-reportAssignmentType = false
-reportAttributeAccessIssue = false
-reportCallIssue = false
-reportGeneralTypeIssues = false
-reportImportCycles = false
-reportIncompatibleMethodOverride = false
-reportMissingParameterType = false
-reportMissingTypeArgument = false
-reportMissingTypeStubs = false
-reportOperatorIssue = false
-reportPrivateImportUsage = false
-reportReturnType = false
-reportUnknownArgumentType = false
-reportUnknownLambdaType = false
-reportUnknownMemberType = false
-reportUnknownParameterType = false
-reportUnknownVariableType = false
-reportUnnecessaryContains = false
-reportUnnecessaryIsInstance = false
-reportUnusedClass = true
-reportUnusedFunction = true
-reportUnusedImport = true
-reportUnusedVariable = true
-typeCheckingMode = "strict"
-venv = ".venv"
-venvPath = "."
+[tool.poe.tasks.test-py310]
+env = {UV_PYTHON = "3.10"}
+ref = "test"
 
-[tool.pytest.ini_options]
+[tool.poe.tasks.test-py311]
+env = {UV_PYTHON = "3.11"}
+ref = "test"
+
+[tool.poe.tasks.test-py312]
+env = {UV_PYTHON = "3.12"}
+ref = "test"
+
+[tool.poe.tasks.test-py313]
+env = {UV_PYTHON = "3.13"}
+ref = "test"
+
+[tool.poe.tasks.test-py314]
+env = {UV_PYTHON = "3.14"}
+ref = "test"
+
+[tool.pytest]
 addopts = [
     "--color=yes",
     "--doctest-continue-on-failure",
@@ -348,6 +316,7 @@ addopts = [
     "--durations=3",
     "--ignore-glob=.virtual_documents",
     "--ignore=docs/conf.py",
+    "--import-mode=importlib",
     "-m not slow",
 ]
 doctest_optionflags = [
@@ -362,6 +331,7 @@ filterwarnings = [
 markers = [
     "slow: marks tests as slow (select with '-m slow')",
 ]
+minversion = "9.0"
 norecursedirs = [
     ".ipynb_checkpoints",
     "_build",
@@ -416,6 +386,7 @@ ignore = [
     "PLW1514",
     "PT001",
     "PTH",
+    "RUF067",
     "S301",
     "SIM108",
 ]
@@ -435,6 +406,7 @@ ignore-names = [
 ]
 
 [tool.ruff.lint.isort]
+known-first-party = ["ampform_dpd"]
 split-on-trailing-comma = false
 
 [tool.ruff.lint.pep8-naming]
@@ -494,7 +466,6 @@ ignore-names = [
 "tests/*" = [
     "D",
     "INP001",
-    "PGH001",
     "PLC2701",
     "PLR2004",
     "PLR6301",
@@ -521,3 +492,37 @@ sort_first = [
 ]
 spaces_indent_inline_array = 4
 trailing_comma_inline_array = true
+
+[[tool.ty.overrides]]
+include = ["docs/serialization.ipynb"]
+
+[tool.ty.overrides.rules]
+invalid-key = "ignore"
+
+[[tool.ty.overrides]]
+include = [
+    "docs/comparison/d2kkk.ipynb",
+    "docs/comparison/jpsi2phipipi.ipynb",
+    "docs/comparison/jpsi2pipipi.ipynb",
+    "docs/index.ipynb",
+    "docs/jpsi2ksp.ipynb",
+    "docs/lc2pkpi.ipynb",
+    "docs/serialization.ipynb",
+    "docs/xib2pkk.ipynb",
+]
+
+[tool.ty.overrides.rules]
+invalid-argument-type = "ignore"
+invalid-assignment = "ignore"
+invalid-return-type = "ignore"
+unknown-argument = "ignore"
+unresolved-attribute = "ignore"
+unsupported-operator = "ignore"
+
+[tool.ty.rules]
+division-by-zero = "warn"
+possibly-missing-import = "warn"
+possibly-unresolved-reference = "warn"
+
+[tool.ty.terminal]
+error-on-warning = true
